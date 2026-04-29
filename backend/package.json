@@ -1,0 +1,19 @@
+{
+  "name": "smart-construction-backend",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "nodemon server.js",
+    "start:debug": "nodemon server.js --inspect",
+    "start:prod": "node server.js"
+  },
+  "dependencies": {
+    "cors": "latest",
+    "express": "latest",
+    "mongoose": "^9.5.0",
+    "mysql2": "^3.22.3"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14"
+  }
+}
