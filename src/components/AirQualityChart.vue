@@ -4,6 +4,7 @@
 
 <script setup>
 import { computed } from 'vue'
+import * as echarts from 'echarts'
 import ChartCard from './ChartCard.vue'
 
 const props = defineProps({

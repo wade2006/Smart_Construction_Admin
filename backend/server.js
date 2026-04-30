@@ -1,8 +1,17 @@
 import express from "express";
 import cors from "cors";
 import mongoose from "mongoose";
+import { createServer } from "http";
+import { Server } from "socket.io";
 
 const app = express();
+const server = createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"],
+  },
+});
 const PORT = 3000;
 
 app.use(cors());
@@ -304,7 +313,6 @@ app.put("/api/alarms/:id/handle", async (req, res) => {
 app.get("/api/workers", async (req, res) => {
   try {
     const workers = await Worker.find().sort({ createdAt: -1 });
-    console.log(workers, "workers-------");
     if (workers.length > 0) {
       res.json({
         code: 200,
@@ -427,6 +435,56 @@ app.get("/stream/chat", (req, res) => {
   });
 });
 
-app.listen(PORT, () => {
+io.on("connection", (socket) => {
+  console.log("Client connected:", socket.id);
+  
+  let heartbeatTimer = null;
+  
+  const startHeartbeat = () => {
+    heartbeatTimer = setTimeout(() => {
+      console.log("Heartbeat timeout, disconnecting:", socket.id);
+      socket.disconnect();
+    }, 15000);
+  };
+  
+  const resetHeartbeat = () => {
+    if (heartbeatTimer) {
+      clearTimeout(heartbeatTimer);
+    }
+    startHeartbeat();
+  };
+  
+  socket.on("heartbeat", () => {
+    socket.emit("heartbeat");
+    resetHeartbeat();
+  });
+  
+  socket.on("disconnect", () => {
+    console.log("Client disconnected:", socket.id);
+    if (heartbeatTimer) {
+      clearTimeout(heartbeatTimer);
+    }
+  });
+  
+  startHeartbeat();
+});
+
+const generateRealtimeData = () => {
+  return {
+    temperature: (Math.random() * 30 + 20).toFixed(1),
+    humidity: (Math.random() * 30 + 40).toFixed(1),
+    windSpeed: (Math.random() * 50 + 10).toFixed(1),
+    noise: (Math.random() * 30 + 15).toFixed(1),
+    light: (Math.random() * 60 + 20).toFixed(1),
+    rainfall: (Math.random() * 80 + 10).toFixed(1),
+  };
+};
+
+setInterval(() => {
+  const realtimeData = generateRealtimeData();
+  io.emit("realtimeData", realtimeData);
+}, 3000);
+
+server.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
 });

@@ -9,7 +9,7 @@
       <StatCard
         title="空气质量指数"
         :value="overviewData.airQuality?.aqi || '--'"
-        :icon="CloudOutlined"
+        :icon="DeleteOutlined"
         :color="airQualityColor"
         :bgColor="airQualityBgColor"
         :subtitle="airQualityLevel"
@@ -17,7 +17,7 @@
       <StatCard
         title="PM2.5浓度"
         :value="`${overviewData.dustData?.pm25 || '--'} μg/m³`"
-        :icon="WindOutlined"
+        :icon="DeleteOutlined"
         color="#91cc75"
         bgColor="#f6ffed"
         :subtitle="overviewData.dustData?.pm10 ? `PM10: ${overviewData.dustData.pm10} μg/m³` : ''"
@@ -25,7 +25,7 @@
       <StatCard
         title="在线工人"
         :value="overviewData.statistics?.onlineWorkers || '--'"
-        :icon="UserOutlined"
+        :icon="DeleteOutlined"
         color="#1890ff"
         bgColor="#e6f7ff"
         :subtitle="`总计: ${overviewData.statistics?.totalWorkers || '--'} 人`"
@@ -49,7 +49,7 @@
       <StatCard
         title="设备在线率"
         :value="`${overviewData.statistics?.deviceOnlineRate || '--'}%`"
-        :icon="ServerOutlined"
+        :icon="DeleteOutlined"
         color="#52c41a"
         bgColor="#f6ffed"
         :subtitle="`在线: ${overviewData.statistics?.onlineDevices || '--'} / ${overviewData.statistics?.totalDevices || '--'}`"
@@ -87,7 +87,7 @@
             :color="alarm.level === 'danger' ? '#f5222d' : alarm.level === 'warning' ? '#faad14' : '#1890ff'"
           >
             <template #dot>
-              <component :is="alarm.level === 'danger' ? AlertTriangleOutlined : alarm.level === 'warning' ? AlertCircleOutlined : InfoCircleOutlined" />
+              <component :is="alarm.level === 'danger' ? DeleteOutlined : alarm.level === 'warning' ? DeleteOutlined : InfoCircleOutlined" />
             </template>
             <p class="font-medium">{{ alarm.title }}</p>
             <p class="text-gray-500 text-sm">{{ alarm.description }}</p>
@@ -102,15 +102,11 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useStore } from 'vuex'
+import { io } from 'socket.io-client'
 import {
-  CloudOutlined,
-  WindOutlined,
-  UserOutlined,
   BuildOutlined,
   BellOutlined,
-  ServerOutlined,
-  AlertTriangleOutlined,
-  AlertCircleOutlined,
+  DeleteOutlined,
   InfoCircleOutlined
 } from '@ant-design/icons-vue'
 import StatCard from '../components/StatCard.vue'
@@ -139,19 +135,91 @@ const airQualityBgColor = computed(() => airQualityInfo.value.color + '20')
 const airQualityLevel = computed(() => airQualityInfo.value.level)
 
 const realtimeData = ref([
-  { label: '温度', value: '--', status: 'normal', statusText: '正常', color: '#1890ff' },
-  { label: '湿度', value: '--', status: 'normal', statusText: '正常', color: '#52c41a' },
-  { label: '风速', value: '--', status: 'normal', statusText: '正常', color: '#faad14' },
-  { label: '噪音', value: '--', status: 'normal', statusText: '正常', color: '#91cc75' },
-  { label: '光照', value: '--', status: 'normal', statusText: '正常', color: '#fac858' },
-  { label: '降雨量', value: '--', status: 'normal', statusText: '正常', color: '#73d13d' }
+  { label: '温度', value: '--', status: 'normal', statusText: '正常', color: '#1890ff', key: 'temperature' },
+  { label: '湿度', value: '--', status: 'normal', statusText: '正常', color: '#52c41a', key: 'humidity' },
+  { label: '风速', value: '--', status: 'normal', statusText: '正常', color: '#faad14', key: 'windSpeed' },
+  { label: '噪音', value: '--', status: 'normal', statusText: '正常', color: '#91cc75', key: 'noise' },
+  { label: '光照', value: '--', status: 'normal', statusText: '正常', color: '#fac858', key: 'light' },
+  { label: '降雨量', value: '--', status: 'normal', statusText: '正常', color: '#73d13d', key: 'rainfall' }
 ])
+
+let socket = null
+let heartbeatInterval = null
+let reconnectInterval = null
+let reconnectAttempts = 0
+const maxReconnectAttempts = 10
 
 const latestAlarms = computed(() => {
   return store.getters['alarm/unhandledAlarms'].slice(0, 5)
 })
 
 let updateInterval = null
+
+const connectSocket = () => {
+  socket = io('http://localhost:3000', {
+    reconnection: false,
+    transports: ['websocket']
+  })
+
+  socket.on('connect', () => {
+    console.log('Socket.IO connected')
+    reconnectAttempts = 0
+    
+    heartbeatInterval = setInterval(() => {
+      if (socket.connected) {
+        socket.emit('heartbeat')
+      }
+    }, 5000)
+  })
+
+  socket.on('heartbeat', () => {
+    console.log('Heartbeat received')
+  })
+
+  socket.on('realtimeData', (data) => {
+    realtimeData.value = realtimeData.value.map(item => {
+      const newValue = data[item.key]
+      return newValue !== undefined ? { ...item, value: newValue } : item
+    })
+  })
+
+  socket.on('disconnect', (reason) => {
+    console.log('Socket.IO disconnected:', reason)
+    
+    if (heartbeatInterval) {
+      clearInterval(heartbeatInterval)
+      heartbeatInterval = null
+    }
+
+    if (reason !== 'io client disconnect') {
+      startReconnect()
+    }
+  })
+
+  socket.on('connect_error', (error) => {
+    console.error('Socket.IO connection error:', error)
+    startReconnect()
+  })
+}
+
+const startReconnect = () => {
+  if (reconnectInterval) {
+    clearInterval(reconnectInterval)
+  }
+
+  if (reconnectAttempts < maxReconnectAttempts) {
+    reconnectAttempts++
+    const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000)
+    
+    console.log(`Reconnecting attempt ${reconnectAttempts}/${maxReconnectAttempts} in ${delay}ms`)
+    
+    reconnectInterval = setTimeout(() => {
+      connectSocket()
+    }, delay)
+  } else {
+    console.error('Max reconnect attempts reached')
+  }
+}
 
 const initChartData = () => {
   const hours = []
@@ -211,16 +279,16 @@ onMounted(() => {
   initOverviewData()
   initChartData()
   
-  updateInterval = setInterval(() => {
-    realtimeData.value = realtimeData.value.map(item => ({
-      ...item,
-      value: (Math.random() * 50 + 20).toFixed(1)
-    }))
-  }, 3000)
+  connectSocket()
 })
 
 onUnmounted(() => {
   if (updateInterval) clearInterval(updateInterval)
+  if (heartbeatInterval) clearInterval(heartbeatInterval)
+  if (reconnectInterval) clearInterval(reconnectInterval)
+  if (socket) {
+    socket.close()
+  }
 })
 </script>
 
