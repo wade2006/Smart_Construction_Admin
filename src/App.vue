@@ -1,6 +1,7 @@
 <template>
-  <a-layout class="min-h-screen">
-    <a-layout-sider v-model:collapsed="collapsed" width="256" class="bg-dark">
+  <router-view v-if="!isAuthenticated && route.path === '/login'" />
+  <a-layout v-else class="min-h-screen">
+    <a-layout-sider v-model:collapsed="collapsed" width="256" class="bg-dark fixed-sidebar">
       <div
         class="logo flex items-center justify-center h-16 text-white text-xl font-bold"
       >
@@ -47,18 +48,18 @@
           <a-dropdown>
             <a class="flex items-center">
               <component :is="UserOutlined" class="mr-2" />
-              <span>管理员</span>
+              <span>{{ currentUser?.username || '管理员' }}</span>
             </a>
             <template #overlay>
               <a-menu>
                 <a-menu-item key="1">个人设置</a-menu-item>
-                <a-menu-item key="2">退出登录</a-menu-item>
+                <a-menu-item key="2" @click="handleLogout">退出登录</a-menu-item>
               </a-menu>
             </template>
           </a-dropdown>
         </div>
       </a-layout-header>
-      <a-layout-content class="p-6">
+      <a-layout-content class="p-6 content-area">
         <router-view />
       </a-layout-content>
     </a-layout>
@@ -83,6 +84,11 @@ const route = useRoute()
 const store = useStore()
 
 const collapsed = ref(false)
+const currentUser = ref(null)
+
+const isAuthenticated = computed(() => {
+  return localStorage.getItem('token') !== null
+})
 
 const selectedKeys = computed(() => [route.path])
 
@@ -92,7 +98,18 @@ const navigate = (path) => {
   router.push(path)
 }
 
+const handleLogout = () => {
+  localStorage.removeItem('token')
+  localStorage.removeItem('user')
+  currentUser.value = null
+  router.push('/login')
+}
+
 onMounted(() => {
+  const userStr = localStorage.getItem('user')
+  if (userStr) {
+    currentUser.value = JSON.parse(userStr)
+  }
   store.dispatch('alarm/fetchAlarms')
   store.dispatch('overview/fetchOverviewData')
 })
@@ -101,5 +118,18 @@ onMounted(() => {
 <style scoped>
 .logo {
   font-size: 18px;
+}
+
+.fixed-sidebar {
+  position: fixed;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 100;
+}
+
+.content-area {
+  margin-left: 256px;
+  min-height: calc(100vh - 64px);
 }
 </style>

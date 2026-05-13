@@ -3,6 +3,8 @@ import cors from "cors";
 import mongoose from "mongoose";
 import { createServer } from "http";
 import { Server } from "socket.io";
+import jwt from "jsonwebtoken";
+import bcrypt from "bcrypt";
 
 const app = express();
 const server = createServer(app);
@@ -13,6 +15,7 @@ const io = new Server(server, {
   },
 });
 const PORT = 3000;
+const JWT_SECRET = "smart_construction_jwt_secret_key_2024";
 
 app.use(cors());
 app.use(express.json());
@@ -22,6 +25,168 @@ mongoose
   .connect("mongodb://localhost:27017/smart-construction")
   .then(() => console.log("MongoDB 连接成功"))
   .catch((err) => console.error("MongoDB 连接失败:", err));
+
+// 用户模型
+const User = mongoose.model(
+  "User",
+  new mongoose.Schema({
+    username: {
+      type: String,
+      required: true,
+      unique: true,
+      trim: true,
+      minlength: 3,
+      maxlength: 30,
+    },
+    password: {
+      type: String,
+      required: true,
+      minlength: 6,
+    },
+    email: {
+      type: String,
+      required: true,
+      unique: true,
+      trim: true,
+    },
+    role: {
+      type: String,
+      enum: ["admin", "user"],
+      default: "user",
+    },
+    createdAt: {
+      type: Date,
+      default: Date.now,
+    },
+  }),
+);
+
+// 创建默认管理员用户
+const createDefaultAdmin = async () => {
+  try {
+    const existingAdmin = await User.findOne({ username: "admin" });
+    if (!existingAdmin) {
+      const salt = await bcrypt.genSalt(10);
+      const hashedPassword = await bcrypt.hash("123456", salt);
+      const admin = new User({
+        username: "admin",
+        password: hashedPassword,
+        email: "admin@example.com",
+        role: "admin",
+      });
+      await admin.save();
+      console.log("默认管理员用户创建成功: admin / 123456");
+    } else {
+      console.log("默认管理员用户已存在");
+    }
+  } catch (error) {
+    console.error("创建默认管理员用户失败:", error);
+  }
+};
+
+// JWT 认证中间件
+const authenticateToken = (req, res, next) => {
+  const token = req.headers["authorization"]?.split(" ")[1];
+  if (!token) {
+    return res.status(401).json({ code: 401, message: "未授权" });
+  }
+
+  jwt.verify(token, JWT_SECRET, (err, user) => {
+    if (err) {
+      return res.status(403).json({ code: 403, message: "token无效" });
+    }
+    req.user = user;
+    next();
+  });
+};
+
+// 注册接口
+app.post("/api/auth/register", async (req, res) => {
+  try {
+    const { username, password, email } = req.body;
+
+    const existingUser = await User.findOne({
+      $or: [{ username }, { email }],
+    });
+
+    if (existingUser) {
+      return res
+        .status(400)
+        .json({ code: 400, message: "用户名或邮箱已存在" });
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    const user = new User({
+      username,
+      password: hashedPassword,
+      email,
+    });
+
+    await user.save();
+
+    res.json({ code: 200, message: "注册成功" });
+  } catch (error) {
+    console.error("注册错误:", error);
+    res.status(500).json({ code: 500, message: "服务器错误" });
+  }
+});
+
+// 登录接口
+app.post("/api/auth/login", async (req, res) => {
+  try {
+    const { username, password } = req.body;
+
+    const user = await User.findOne({ username });
+
+    if (!user) {
+      return res.status(401).json({ code: 401, message: "用户名或密码错误" });
+    }
+
+    const isValidPassword = await bcrypt.compare(password, user.password);
+
+    if (!isValidPassword) {
+      return res.status(401).json({ code: 401, message: "用户名或密码错误" });
+    }
+
+    const token = jwt.sign(
+      { userId: user._id, username: user.username, role: user.role },
+      JWT_SECRET,
+      { expiresIn: "24h" }
+    );
+
+    res.json({
+      code: 200,
+      message: "登录成功",
+      data: {
+        token,
+        user: {
+          id: user._id,
+          username: user.username,
+          email: user.email,
+          role: user.role,
+        },
+      },
+    });
+  } catch (error) {
+    console.error("登录错误:", error);
+    res.status(500).json({ code: 500, message: "服务器错误" });
+  }
+});
+
+// 获取当前用户信息
+app.get("/api/auth/me", authenticateToken, (req, res) => {
+  res.json({
+    code: 200,
+    message: "success",
+    data: {
+      userId: req.user.userId,
+      username: req.user.username,
+      role: req.user.role,
+    },
+  });
+});
 
 // 数据模型
 const Overview = mongoose.model(
@@ -485,6 +650,7 @@ setInterval(() => {
   io.emit("realtimeData", realtimeData);
 }, 3000);
 
-server.listen(PORT, () => {
+server.listen(PORT, async () => {
   console.log(`Server running on http://localhost:${PORT}`);
+  await createDefaultAdmin();
 });

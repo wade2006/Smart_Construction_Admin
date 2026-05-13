@@ -27,7 +27,7 @@ const actions = {
   async fetchOverviewData({ commit }) {
     try {
       const response = await api.get("/overview");
-      commit("SET_OVERVIEW_DATA", response.data.data);
+      commit("SET_OVERVIEW_DATA", response.data);
     } catch (error) {
       console.error("获取概览数据失败:", error);
     }
@@ -35,7 +35,7 @@ const actions = {
   async fetchChartData({ commit }) {
     try {
       const response = await api.get("/overview/chart");
-      commit("SET_CHART_DATA", response.data.data);
+      commit("SET_CHART_DATA", response.data);
     } catch (error) {
       console.error("获取图表数据失败:", error);
     }

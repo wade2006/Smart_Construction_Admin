@@ -30,7 +30,7 @@ const actions = {
   async fetchWorkers({ commit }, params) {
     try {
       const response = await api.get('/workers', { params })
-      commit('SET_WORKERS', response.data.data)
+      commit('SET_WORKERS', { list: response.data, total: response.data.length })
     } catch (error) {
       console.error('获取工人数据失败:', error)
     }
@@ -38,7 +38,7 @@ const actions = {
   async addWorker({ commit }, worker) {
     try {
       const response = await api.post('/workers', worker)
-      commit('ADD_WORKER', response.data.data)
+      commit('ADD_WORKER', response.data)
     } catch (error) {
       console.error('添加工人失败:', error)
     }
@@ -46,7 +46,7 @@ const actions = {
   async updateWorker({ commit }, worker) {
     try {
       const response = await api.put(`/workers/${worker.id}`, worker)
-      commit('UPDATE_WORKER', response.data.data)
+      commit('UPDATE_WORKER', response.data)
     } catch (error) {
       console.error('更新工人信息失败:', error)
     }

@@ -23,7 +23,7 @@ const actions = {
   async fetchAlarms({ commit }) {
     try {
       const response = await api.get('/alarms')
-      commit('SET_ALARMS', response.data.data)
+      commit('SET_ALARMS', response.data)
     } catch (error) {
       console.error('获取告警数据失败:', error)
     }
